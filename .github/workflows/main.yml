@@ -12,16 +12,12 @@ jobs:
     steps:
       - name: Checkout Kernel Source
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 0
 
       - name: Setup Build Environment
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev make libc6-dev \
           clang lld gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu libelf-dev zip unzip python3
-
       - name: Download Android Clang Toolchain (r416183b)
         run: |
           # Adjusting directory to match the nested kernel/kernel_platform tree
@@ -33,7 +29,6 @@ jobs:
           
           # Clean up Git tracking files from the sub-toolchain
           rm -rf clang-r416183b/.git
-
       - name: Compile Samsung Kernel Platform
         run: |
           # Shift into the proper root platform directory before setting up variables
@@ -51,10 +46,8 @@ jobs:
           export ANDROID_PRODUCT_OUT=${ANDROID_BUILD_TOP}/out/target/product/${MODEL}
           export OUT_DIR=${ANDROID_BUILD_TOP}/out/msm-${CHIPSET_NAME}-${CHIPSET_NAME}-${TARGET_PRODUCT}
           
-          chmod +x Kernel/build_kernel_GKI.sh
-          bash Kernel/build_kernel_GKI.sh
-         #RECOMPILE_KERNEL=1 build/android/prepare_vendor.sh sec ${TARGET_PRODUCT}
-
+          chmod +x build/android/prepare_vendor.sh
+          RECOMPILE_KERNEL=1 build/android/prepare_vendor.sh sec ${TARGET_PRODUCT}
       - name: Fetch and Package with AnyKernel3
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git AK3-Staging
@@ -73,7 +66,6 @@ jobs:
           echo "Zipping flashable file..."
           cd AK3-Staging
           zip -r9 ../Custom-Kernel-SM-X700.zip *
-
       - name: Upload Flashable Zip
         uses: actions/upload-artifact@v4
         with:
