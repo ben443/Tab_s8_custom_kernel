@@ -1,0 +1,76 @@
+name: Build Custom Wi-Fi Kernel (SM-X700)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+
+      - name: Setup Build Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison flex libssl-dev make libc6-dev \
+          clang lld gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu libelf-dev zip unzip python3
+
+      - name: Download Android Clang Toolchain (r416183b)
+        run: |
+          # Creates the exact directory structure Samsung's build.config.common expects
+          mkdir -p kernel_platform/prebuilts-master/clang/host/linux-x86
+          cd kernel_platform/prebuilts-master/clang/host/linux-x86
+          
+          # Fetches the official Google prebuilt matching the Samsung required version
+          wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r416183b.tar.gz
+          mkdir clang-r416183b
+          tar -C clang-r416183b -xf clang-r416183b.tar.gz
+
+      - name: Fetch AnyKernel3
+        run: |
+          git clone https://github.com/osm0sis/AnyKernel3.git AK3-Staging
+          rm -rf AK3-Staging/.git
+
+      - name: Compile Samsung Kernel Platform
+        run: |
+          # Exporting variables exactly as specified in Samsung's README_Kernel.txt
+          export ANDROID_BUILD_TOP=$(pwd)
+          export MODEL=gts8wifi
+          export PROJECT_NAME=gts8wifi
+          export REGION=xsp
+          export CARRIER=open
+          export TARGET_BUILD_VARIANT=user
+          export CHIPSET_NAME=waipio
+          export TARGET_PRODUCT=gki
+          export TARGET_BOARD_PLATFORM=gki
+          export ANDROID_PRODUCT_OUT=${ANDROID_BUILD_TOP}/out/target/product/${MODEL}
+          export OUT_DIR=${ANDROID_BUILD_TOP}/out/msm-${CHIPSET_NAME}-${CHIPSET_NAME}-${TARGET_PRODUCT}
+          
+          # Ensure the Samsung build script is executable
+          chmod +x ./kernel_platform/build/android/prepare_vendor.sh
+          
+          # Trigger the build process
+          RECOMPILE_KERNEL=1 ./kernel_platform/build/android/prepare_vendor.sh sec ${TARGET_PRODUCT}
+
+      - name: Package with AnyKernel3
+        run: |
+          echo "Moving kernel image..."
+          cp out/msm-waipio-waipio-gki/arch/arm64/boot/Image AK3-Staging/
+          
+          echo "Moving compiled Wi-Fi modules..."
+          mkdir -p AK3-Staging/modules/vendor/lib/modules/
+          find out/msm-waipio-waipio-gki/ -type f -name "*.ko" -exec cp {} AK3-Staging/modules/vendor/lib/modules/ \;
+          
+          echo "Zipping flashable file..."
+          cd AK3-Staging
+          zip -r9 ../Custom-Kernel-SM-X700.zip *
+
+      - name: Upload Flashable Zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Custom-Kernel-SM-X700
+          path: Custom-Kernel-SM-X700.zip
