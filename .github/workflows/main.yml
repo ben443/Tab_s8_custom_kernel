@@ -51,7 +51,7 @@ jobs:
           export ANDROID_PRODUCT_OUT=${ANDROID_BUILD_TOP}/out/target/product/${MODEL}
           export OUT_DIR=${ANDROID_BUILD_TOP}/out/msm-${CHIPSET_NAME}-${CHIPSET_NAME}-${TARGET_PRODUCT}
           
-          chmod +x build/android/prepare_vendor.sh
+          #chmod +x build/android/prepare_vendor.sh
           ./kernel/build_kernel_GKI.sh
          #RECOMPILE_KERNEL=1 build/android/prepare_vendor.sh sec ${TARGET_PRODUCT}
 
