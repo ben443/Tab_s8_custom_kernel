@@ -37,7 +37,7 @@ jobs:
       - name: Compile Samsung Kernel Platform
         run: |
           # Shift into the proper root platform directory before setting up variables
-          cd kernel/kernel_platform
+          #cd kernel/kernel_platform
           
           export ANDROID_BUILD_TOP=$(pwd)
           export MODEL=gts8wifi
@@ -52,7 +52,8 @@ jobs:
           export OUT_DIR=${ANDROID_BUILD_TOP}/out/msm-${CHIPSET_NAME}-${CHIPSET_NAME}-${TARGET_PRODUCT}
           
           chmod +x build/android/prepare_vendor.sh
-          RECOMPILE_KERNEL=1 build/android/prepare_vendor.sh sec ${TARGET_PRODUCT}
+          ./kernel/build_kernel_GKI.sh
+         #RECOMPILE_KERNEL=1 build/android/prepare_vendor.sh sec ${TARGET_PRODUCT}
 
       - name: Fetch and Package with AnyKernel3
         run: |
