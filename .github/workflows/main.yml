@@ -52,9 +52,15 @@ jobs:
           # 1. Create the output directory before the script tries to use mktemp
           mkdir -p ${ANDROID_PRODUCT_OUT}
           
-          # 2. Ensure both the main script and the brunch script it calls are executable
+          # 2. Ensure all build scripts are executable
           chmod +x build/android/prepare_vendor.sh
           chmod +x build/brunch
+          chmod +x build/build.sh
+          chmod +x build/build_abi.sh
+          chmod +x build/config.sh
+          chmod +x build/all-variants.sh
+          chmod +x build/copy_symbols.sh
+          chmod +x build/synchronize_owners
           # ---------------------
           
           RECOMPILE_KERNEL=1 build/android/prepare_vendor.sh sec ${TARGET_PRODUCT}
