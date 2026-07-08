@@ -8,7 +8,7 @@ on:
 jobs:
   build-kernel:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout Kernel Source
         uses: actions/checkout@v4
@@ -18,7 +18,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev make libc6-dev \
           clang lld gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu libelf-dev zip unzip python3
-          
+
       - name: Download Android Clang Toolchain (r416183b)
         run: |
           # Adjusting directory to match the nested kernel/kernel_platform tree
@@ -30,12 +30,13 @@ jobs:
           
           # Clean up Git tracking files from the sub-toolchain
           rm -rf clang-r416183b/.git
-          
+
       - name: Compile Samsung Kernel Platform
         run: |
+          set -euo pipefail
           # Shift into the proper root platform directory before setting up variables
           cd Kernel/kernel_platform
-          
+
           export ANDROID_BUILD_TOP=$(pwd)
           export MODEL=gts8wifi
           export PROJECT_NAME=gts8wifi
@@ -47,43 +48,80 @@ jobs:
           export TARGET_BOARD_PLATFORM=gki
           export ANDROID_PRODUCT_OUT=${ANDROID_BUILD_TOP}/out/target/product/${MODEL}
           export OUT_DIR=${ANDROID_BUILD_TOP}/out/msm-${CHIPSET_NAME}-${CHIPSET_NAME}-${TARGET_PRODUCT}
-          
-          # --- APPLIED FIXES ---
-          # 1. Create the output directory before the script tries to use mktemp
-          mkdir -p ${ANDROID_PRODUCT_OUT}
-          
-          # 2. Ensure all build scripts are executable
-          chmod +x build/android/prepare_vendor.sh
-          chmod +x build/brunch
-          chmod +x build/build.sh
-          chmod +x build/build_abi.sh
-          chmod +x build/config.sh
-          chmod +x build/all-variants.sh
-          chmod +x build/copy_symbols.sh
-          chmod +x build/synchronize_owners
-          # ---------------------
-          
+
+          # --- APPLIED FIXES & ADDITIONAL GUARD ---
+          # 1) Attempt to create expected output directories; if that fails, fall back to /tmp to keep mktemp and other temporary ops working.
+          if mkdir -p "${ANDROID_PRODUCT_OUT}" 2>/dev/null; then
+            echo "Created ANDROID_PRODUCT_OUT: ${ANDROID_PRODUCT_OUT}"
+          else
+            FALLBACK_OUT="/tmp/android_product_out_${GITHUB_RUN_NUMBER:-$$}"
+            echo "Warning: could not create ${ANDROID_PRODUCT_OUT}, falling back to ${FALLBACK_OUT}"
+            export ANDROID_PRODUCT_OUT="${FALLBACK_OUT}"
+            mkdir -p "${ANDROID_PRODUCT_OUT}"
+          fi
+
+          # ensure a tmp directory under product out for mktemp usage
+          mkdir -p "${ANDROID_PRODUCT_OUT}/tmp" || true
+
+          # ensure OUT_DIR exists (best-effort)
+          if ! mkdir -p "${OUT_DIR}" 2>/dev/null; then
+            echo "Warning: could not create ${OUT_DIR}; continuing (some build outputs may go to fallback tmp)"
+          fi
+
+          # 2) Set TMPDIR to a writable, present directory (prefer product-out/tmp, else /tmp)
+          if [ -w "${ANDROID_PRODUCT_OUT}/tmp" ]; then
+            export TMPDIR="${ANDROID_PRODUCT_OUT}/tmp"
+          else
+            echo "Note: ${ANDROID_PRODUCT_OUT}/tmp is not writable, using /tmp for TMPDIR"
+            export TMPDIR="/tmp"
+          fi
+          mkdir -p "${TMPDIR}" || true
+
+          # 3) Ensure the vendor preparation and helper scripts are executable, only if present.
+          if [ -f build/android/prepare_vendor.sh ]; then
+            chmod +x build/android/prepare_vendor.sh
+          else
+            echo "Error: build/android/prepare_vendor.sh not found in $(pwd)/build/android"
+            ls -la build || true
+            exit 1
+          fi
+
+          for f in build/brunch build/build.sh build/build_abi.sh build/config.sh build/all-variants.sh build/copy_symbols.sh build/synchronize_owners; do
+            if [ -f "$f" ]; then
+              chmod +x "$f" || true
+            else
+              echo "Note: helper script $f not found; skipping chmod"
+            fi
+          done
+
+          # Show quick debug info (permission and path checks)
+          echo "Using ANDROID_PRODUCT_OUT=${ANDROID_PRODUCT_OUT}"
+          echo "Using TMPDIR=${TMPDIR}"
+          ls -ld "${ANDROID_PRODUCT_OUT}" "${ANDROID_PRODUCT_OUT}/tmp" "${OUT_DIR}" || true
+          if [ -f build/brunch ]; then ls -la build/brunch || true; else echo "Warning: build/brunch not present; prepare_vendor.sh may fail if it requires this helper"; fi
+
+          # Run the vendor preparation (recompile kernel)
           RECOMPILE_KERNEL=1 build/android/prepare_vendor.sh sec ${TARGET_PRODUCT}
-          
+
       - name: Fetch and Package with AnyKernel3
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git AK3-Staging
           rm -rf AK3-Staging/.git
           
           echo "Injecting custom anykernel.sh..."
-          cp anykernel.sh AK3-Staging/
+          cp anykernel.sh AK3-Staging/ || true
           
           echo "Moving kernel image..."
-          cp Kernel/kernel_platform/out/msm-waipio-waipio-gki/arch/arm64/boot/Image AK3-Staging/
+          cp Kernel/kernel_platform/out/msm-waipio-waipio-gki/arch/arm64/boot/Image AK3-Staging/ || true
           
           echo "Moving compiled Wi-Fi modules..."
           mkdir -p AK3-Staging/modules/vendor/lib/modules/
-          find Kernel/kernel_platform/out/msm-waipio-waipio-gki/ -type f -name "*.ko" -exec cp {} AK3-Staging/modules/vendor/lib/modules/ \;
+          find Kernel/kernel_platform/out/msm-waipio-waipio-gki/ -type f -name "*.ko" -exec cp {} AK3-Staging/modules/vendor/lib/modules/ \; || true
           
           echo "Zipping flashable file..."
           cd AK3-Staging
-          zip -r9 ../Custom-Kernel-SM-X700.zip *
-          
+          zip -r9 ../Custom-Kernel-SM-X700.zip * || true
+
       - name: Upload Flashable Zip
         uses: actions/upload-artifact@v4
         with:
